@@ -4,7 +4,7 @@ A Python script to match torrents added to qBittorent to files on a disk.
 
 ## Demo
 
-![demo](media\demo.webp "Made with ScreenToGif")
+![demo](media/demo.webp "Made with ScreenToGif")
 
 ## Features
 
