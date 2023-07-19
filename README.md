@@ -27,6 +27,10 @@ You can run the script from the command line using the following command:
 
 * Tested only on Windows
 
+## todo
+* Directory scanning optimization. As it currently works, it will try to scan whole download dir and its sub dirs for files, which will not go well if the dir is you C drive
+* Option to force matches to share an extension
+
 ## Setup
 
 ### Install dependencies
