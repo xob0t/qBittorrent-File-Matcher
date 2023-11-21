@@ -97,7 +97,7 @@ def match(torrent, files_in_directory, match_extension, download_path, is_dry_ru
         elif matching_files:
             selected_file_path = matching_files[0]
         else:
-            print(f"{Fore.RED}No matches found for {torrent_file.name}!")
+            print(f"{Fore.RED}No matches found for {torrent_file.name}!{Style.RESET_ALL}")
             continue
 
         matched_files.add(selected_file_path)
