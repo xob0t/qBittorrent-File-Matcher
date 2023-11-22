@@ -6,35 +6,12 @@ from pathlib import Path
 
 try:
     from colorama import Fore, Style, init
-except ModuleNotFoundError:
-    print(
-        "You need to install the colorama module. (https://pypi.org/project/colorama/)"
-    )
-    print(
-        "If you have pip (normally installed with python), run this command in a terminal (cmd): pip install colorama"
-    )
-    sys.exit()
-
-try:
     from InquirerPy import prompt
-except ModuleNotFoundError:
-    print(
-        "You need to install the InquirerPy module. (https://pypi.org/project/inquirerpy/)"
-    )
-    print(
-        "If you have pip (normally installed with python), run this command in a terminal (cmd): pip install inquirerpy"
-    )
-    sys.exit()
-
-try:
     from qbittorrentapi import Client
 except ModuleNotFoundError:
-    print(
-        "You need to install the qbittorrentapi module. (https://pypi.org/project/qbittorrent-api/)"
-    )
-    print(
-        "If you have pip (normally installed with python), run this command in a terminal (cmd): pip install qbittorrent-api"
-    )
+    print("You need to install the dependencies.")
+    print("If you have pip (normally installed with python), run this command in a terminal (cmd):")
+    print('pip install colorama inquirerpy qbittorrent-api')
     sys.exit()
 
 def get_config():
@@ -84,7 +61,6 @@ def make_new_config(default_config, config, config_file):
 
 def init_client():
     host, username, password = get_config()
-    print("connecting to api")
     return Client(host=host, username=username, password=password)
 
 
@@ -121,7 +97,7 @@ def match(torrent, files_in_directory, match_extension, download_path, is_dry_ru
         elif matching_files:
             selected_file_path = matching_files[0]
         else:
-            print(f"{Fore.RED}No matches found for {torrent_file.name}!")
+            print(f"{Fore.RED}No matches found for {torrent_file.name}!{Style.RESET_ALL}")
             continue
 
         matched_files.add(selected_file_path)
@@ -161,6 +137,7 @@ def set_search_and_download_paths(torrent, input_search_path, input_download_pat
 def main(torrent_hash, input_search_path = None, input_download_path = None, use_torrent_save_path_as_search_path = False, match_extension = False, is_dry_run = False):
     init() #colorama
     client = init_client()
+    print("connected to api")
     torrents_info = client.torrents.info(torrent_hashes=torrent_hash)
 
     torrent = torrents_info[0] if torrents_info else sys.exit("No torrent found with the given hash")
@@ -183,7 +160,7 @@ def main(torrent_hash, input_search_path = None, input_download_path = None, use
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tool to match torrents added to qBittorent to files on a disk")
-    parser.add_argument('hash', help='The torrent hash.')
+    parser.add_argument('hash', help='Torrent hash, or a path to a txt with a list of hashes.')
     parser.add_argument('-s', '-spath', default='', help="Specifies search path. Must be a subpath of the download path.")
     parser.add_argument('-d', '-dpath', default='', help="Sets new download path for the torrent.")
     parser.add_argument('-fd', action='store_true', help="Forces search in torrent's download directory. Default is torrent's content directory. Ignored if passed along with search.")
@@ -191,4 +168,11 @@ if __name__ == "__main__":
     parser.add_argument('-dry', action='store_true', help="Performs a dry run without modifying anything.")
 
     args = parser.parse_args()
-    main(args.hash, args.s, args.d, args.fd, args.e, args.dry)
+
+    if os.path.isfile(args.hash):
+        with open(args.hash, "r") as file:
+            hashes = file.read()
+        for hash in hashes.split('\n'):
+            main(hash, args.s, args.d, args.fd, args.e, args.dry)
+    else:
+        main(args.hash, args.s, args.d, args.fd, args.e, args.dry)

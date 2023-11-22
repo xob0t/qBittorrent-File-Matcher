@@ -8,6 +8,24 @@ You've renamed downloaded files, or changed folder structure and now qBittorrent
 
 ![demo](media/demo.webp "Made with ScreenToGif")
 
+## Setup
+
+### Install dependencies
+
+- [colorama](https://pypi.org/project/colorama/)
+- [InquirerPy](https://pypi.org/project/inquirerpy/)
+- [qbittorrent-api](https://pypi.org/project/qbittorrent-api/)
+
+```
+pip install colorama inquirerpy qbittorrent-api
+```
+
+### Enable Web UI
+
+In qBittorrent - Tools -> Options -> Web UI -> Top checkmark
+
+### Run the Script!
+
 ## Changelog as of 21.07.23
 
 - Changes in Default Behavior:
@@ -38,31 +56,18 @@ Content directory is the directory **in** the torrent, if the torrent is not a s
 
 You can run the script from the command line using the following command:
 
-#### ``python qbittorrent_file_matcher.py <torrent_hash> [optional arguments]``
-
-- `<torrent_hash>`: The hash of the torrent to match. (Right click a torrent in qBittorrent, Copy - info hash v1)
-- `-s`, `-spath:` Specifies search path. Must be a subpath of the download path. Default is torrent's content directory.
-- `-d`, `-dpath`: Sets new download path for the torrent. Does not actually move the files.
-- `-sd`: Forces search in torrent's download directory. Default is torrent's content directory. Ignored if passed along with `-s`.
-- `-e`, `-ext`: Forces matched files to share an extension.
-- `-dry`: Performs a dry run without modifying anything.
+```
+python qbittorrent_file_matcher.py <torrent_hash> [optional arguments]
+```
+| Arguments | Description |
+| --------------- | ----------- |
+|`<torrent_hash>`|The hash of the torrent to match. (Right click a torrent in qBittorrent, Copy - info hash v1).<br />Or a path to a txt with a list of hashes.|
+|`-s`, `-spath`|Specifies search path. Must be a subpath of the download path.<br />Default is torrent's content directory.|
+|`-d`, `-dpath`|Sets new download path for the torrent. Does not actually move the files.|
+|`-sd`|Forces search in torrent's download directory. Default is torrent's content directory.<br />Ignored if passed along with `-s`.|
+|`-e`, `-ext`|Forces matched files to share an extension.|
+|`-dry`|Performs a dry run without modifying anything.|
 
 ## Notes
 
 * Tested on Windows 10
-
-## Setup
-
-### Install dependencies
-
-- [colorama](https://pypi.org/project/colorama/)
-- [InquirerPy](https://pypi.org/project/inquirerpy/)
-- [qbittorrent-api](https://pypi.org/project/qbittorrent-api/)
-
-#### ``pip install colorama inquirerpy qbittorrent-api``
-
-### Enable Web UI
-
-In qBittorrent - Tools -> Options -> Web UI -> Top checkmark
-
-### Run the Script!
