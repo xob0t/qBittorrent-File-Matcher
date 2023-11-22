@@ -160,7 +160,7 @@ def main(torrent_hash, input_search_path = None, input_download_path = None, use
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tool to match torrents added to qBittorent to files on a disk")
-    parser.add_argument('hash', help='Torrent hash, or a txt with a list of hashes.')
+    parser.add_argument('hash', help='Torrent hash, or a path to a txt with a list of hashes.')
     parser.add_argument('-s', '-spath', default='', help="Specifies search path. Must be a subpath of the download path.")
     parser.add_argument('-d', '-dpath', default='', help="Sets new download path for the torrent.")
     parser.add_argument('-fd', action='store_true', help="Forces search in torrent's download directory. Default is torrent's content directory. Ignored if passed along with search.")
