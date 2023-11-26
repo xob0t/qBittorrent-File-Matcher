@@ -121,14 +121,14 @@ def set_search_and_download_paths(torrent, input_search_path, input_download_pat
     if input_download_path:
         content_path = str(Path(input_download_path).joinpath(Path(content_path).relative_to(download_path)))
         download_path = input_download_path
-    if input_search_path.startswith(str(Path(download_path).resolve())):
+    if input_search_path and input_search_path.startswith(str(Path(download_path).resolve())):
         search_path = input_search_path
     elif input_search_path and not input_search_path.startswith(str(Path(download_path).resolve())):
         sys.exit(f"Search path {input_search_path} must be sub directory of {download_path}")
     elif use_torrent_save_path_as_search_path or not Path(content_path).exists():
         search_path = download_path
     else:
-        search_path = content_path
+        search_path = content_path if Path(content_path).is_dir() else Path(content_path).parent
 
     search_path = search_path if Path(search_path).exists() else sys.exit(f"Search path {search_path} does not exist")
     download_path = download_path if Path(download_path).exists() else sys.exit(f"Download path {download_path} does not exist")
