@@ -76,6 +76,8 @@ def get_matching_files_in_dir_and_subdirs(search_path, sizes):
 def match(torrent, files_in_directory, match_extension, download_path, is_dry_run):
     matched_files = set()  # keep track of already matched files
     for torrent_file in torrent.files:
+        if torrent_file.priority == 0:
+            continue
         matching_files = []
         for disk_file_abs_path, disk_file_size in files_in_directory:
             if (torrent_file.size == disk_file_size and
