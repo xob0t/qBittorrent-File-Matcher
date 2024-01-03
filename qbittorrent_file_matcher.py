@@ -76,6 +76,8 @@ def get_matching_files_in_dir_and_subdirs(search_path, sizes):
 def match(torrent, files_in_directory, match_extension, download_path, is_dry_run):
     matched_files = set()  # keep track of already matched files
     for torrent_file in torrent.files:
+        if torrent_file.priority == 0:
+            continue
         matching_files = []
         for disk_file_abs_path, disk_file_size in files_in_directory:
             if (torrent_file.size == disk_file_size and
@@ -103,7 +105,7 @@ def match(torrent, files_in_directory, match_extension, download_path, is_dry_ru
         matched_files.add(selected_file_path)
         new_relative_path = Path(selected_file_path).relative_to(download_path).as_posix()
         if new_relative_path == torrent_file.name:
-            print(f"File:\n{torrent_file.name} left as is")
+            print(f"{torrent_file.name} already synced, left as is")
             continue
         if is_dry_run:
             print(f"{Fore.YELLOW}Dry run:{Style.RESET_ALL}\n{torrent_file.name} ->\n{Fore.YELLOW}{new_relative_path}{Style.RESET_ALL}")
@@ -119,14 +121,14 @@ def set_search_and_download_paths(torrent, input_search_path, input_download_pat
     if input_download_path:
         content_path = str(Path(input_download_path).joinpath(Path(content_path).relative_to(download_path)))
         download_path = input_download_path
-    if input_search_path.startswith(str(Path(download_path).resolve())):
+    if input_search_path and input_search_path.startswith(str(Path(download_path).resolve())):
         search_path = input_search_path
     elif input_search_path and not input_search_path.startswith(str(Path(download_path).resolve())):
         sys.exit(f"Search path {input_search_path} must be sub directory of {download_path}")
     elif use_torrent_save_path_as_search_path or not Path(content_path).exists():
         search_path = download_path
     else:
-        search_path = content_path
+        search_path = content_path if Path(content_path).is_dir() else Path(content_path).parent
 
     search_path = search_path if Path(search_path).exists() else sys.exit(f"Search path {search_path} does not exist")
     download_path = download_path if Path(download_path).exists() else sys.exit(f"Download path {download_path} does not exist")
@@ -134,45 +136,68 @@ def set_search_and_download_paths(torrent, input_search_path, input_download_pat
     return search_path, download_path
 
 
-def main(torrent_hash, input_search_path = None, input_download_path = None, use_torrent_save_path_as_search_path = False, match_extension = False, is_dry_run = False):
-    init() #colorama
-    client = init_client()
+def matcher(input_torrent_hashes = None, sync_all = False, input_search_path = None, input_download_path = None, use_torrent_save_path_as_search_path = False, match_extension = False, is_dry_run = False):
+    qb_client = init_client()
     print("connected to api")
-    torrents_info = client.torrents.info(torrent_hashes=torrent_hash)
+    if input_torrent_hashes:
+        torrents = qb_client.torrents.info(torrent_hashes=input_torrent_hashes)
+        if not torrents:
+            sys.exit(f"{Fore.RED}No torrents found with any the given hashes{Style.RESET_ALL}")
+        else:
+            found_hashes = [torrent['hash'] for torrent in torrents]  # Extracting found hashes
+            for hash_value in input_torrent_hashes:
+                if hash_value not in found_hashes:
+                    print(f"{Fore.RED}Torrent with hash {hash_value} not found{Style.RESET_ALL}")
+    elif sync_all:
+        torrents = qb_client.torrents_info()
+        if not torrents:
+            sys.exit(f"{Fore.RED}No torrents found{Style.RESET_ALL}")
+    for torrent in torrents:
+        torrent_hash = torrent['hash']
+        print(f"Target torrent: {torrent.name}")
+        search_path , download_path = set_search_and_download_paths(torrent, input_search_path, input_download_path, use_torrent_save_path_as_search_path)
+        print(f"Search directory {search_path}\nDownload directory {download_path}")
+        torrent_file_sizes = set(file.size for file in torrent.files)
+        print("Scanning files in search directory")
+        files_in_directory = get_matching_files_in_dir_and_subdirs(search_path, torrent_file_sizes)
+        print("Looking for matches")
+        match(torrent, files_in_directory, match_extension, download_path, is_dry_run)
+        if input_download_path and input_download_path != torrent.save_path and not is_dry_run:
+            print(f"Changing torrent save location to {input_download_path}")
+            qb_client.torrents_set_location(torrent_hashes=torrent_hash, location=input_download_path)
+            print(f"{Fore.LIGHTMAGENTA_EX}Rechecking torrent{Style.RESET_ALL}")
+            qb_client.torrents_recheck(torrent_hash)
+        if is_dry_run:
+            print(f"{Fore.YELLOW}Performed a dry run, nothing was modified{Style.RESET_ALL}")
 
-    torrent = torrents_info[0] if torrents_info else sys.exit("No torrent found with the given hash")
-    print(f"Target torrent: {torrent.name}")
 
-    search_path , download_path = set_search_and_download_paths(torrent, input_search_path, input_download_path, use_torrent_save_path_as_search_path)
-    print(f"Search directory {search_path}\nDownload directory {download_path}")
-    torrent_file_sizes = set(file.size for file in torrent.files)
-    files_in_directory = get_matching_files_in_dir_and_subdirs(search_path, torrent_file_sizes)
-    print("Looking for matches")
-    match(torrent, files_in_directory, match_extension, download_path, is_dry_run)
-    if input_download_path and input_download_path != torrent.save_path and not is_dry_run:
-        print(f"Changing torrent save location to {input_download_path}")
-        client.torrents_set_location(torrent_hashes=torrent_hash, location=input_download_path)
-        print(f"{Fore.LIGHTMAGENTA_EX}Rechecking torrent{Style.RESET_ALL}")
-        client.torrents_recheck(torrent_hash)
-    if is_dry_run:
-        print(f"{Fore.YELLOW}Performed a dry run, nothing was modified{Style.RESET_ALL}")
-
-
-if __name__ == "__main__":
+def main():
+    init() #colorama
     parser = argparse.ArgumentParser(description="Tool to match torrents added to qBittorent to files on a disk")
-    parser.add_argument('hash', help='Torrent hash, or a path to a txt with a list of hashes.')
-    parser.add_argument('-s', '-spath', default='', help="Specifies search path. Must be a subpath of the download path.")
-    parser.add_argument('-d', '-dpath', default='', help="Sets new download path for the torrent.")
+    parser.add_argument('input', nargs='?', default=None, help='Torrent hash, or a txt with a list of hashes.')
+    parser.add_argument('-a', '-all', action='store_true', help="Look for matches for every qBT torrent. Ignored if used with input hash(es).")
+    parser.add_argument('-s', '-spath', default=None, help="Specifies search path. Must be a subpath of the download path.")
+    parser.add_argument('-d', '-dpath', default=None, help="Sets new download path for the torrent.")
     parser.add_argument('-fd', action='store_true', help="Forces search in torrent's download directory. Default is torrent's content directory. Ignored if passed along with search.")
     parser.add_argument('-e', '-ext', action='store_true', help="Forces matched files to share an extension.")
     parser.add_argument('-dry', action='store_true', help="Performs a dry run without modifying anything.")
 
     args = parser.parse_args()
 
-    if os.path.isfile(args.hash):
-        with open(args.hash, "r") as file:
-            hashes = file.read()
-        for hash in hashes.split('\n'):
-            main(hash, args.s, args.d, args.fd, args.e, args.dry)
+    if args.input and os.path.isfile(args.input):
+        with open(args.input, "r") as file:
+            hashes = [line.strip() for line in file if line.strip()]
     else:
-        main(args.hash, args.s, args.d, args.fd, args.e, args.dry)
+        hashes = [args.input] if args.input else None
+    matcher(
+        input_torrent_hashes = hashes,
+        sync_all = args.a,
+        input_search_path = args.s,
+        input_download_path = args.d,
+        use_torrent_save_path_as_search_path = args.fd,
+        match_extension = args.e,
+        is_dry_run = args.dry
+        )
+
+if __name__ == "__main__":
+    main()
