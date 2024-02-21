@@ -106,6 +106,7 @@ def match(
             )
         ]
         if len(matching_files) > 1:
+            matching_files.insert(0, "<Skip this file>")
             question: list[dict[str, Any]] = [
                 {
                     "type": "list",
@@ -115,7 +116,13 @@ def match(
                 },
             ]
             response = prompt(question)
+            if response == "<Skip this file>":
+                print("user chose to skip, continuing with next torrent...")
+                continue
+            
             selected_file_path = response["file"]
+            assert isinstance(selected_file_path, str)
+
         elif matching_files:
             selected_file_path = matching_files[0]
 
