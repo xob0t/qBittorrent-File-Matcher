@@ -116,8 +116,8 @@ def match(
             subfolder_to_ignore: Path = Path(matching_files[0]).parent
             extension_to_ignore: str = Path(torrent_file.name).suffix.lower()
 
-            subfolder_ignore_question = f"<Ignore all files in '{subfolder_to_ignore}'>"
-            extension_ignore_question = f"<Ignore all files with '{extension_to_ignore}' extensions>"
+            subfolder_ignore_question = f"<Don't ask again for all files in '{subfolder_to_ignore}'>"
+            extension_ignore_question = f"<Don't ask again for all files with '{extension_to_ignore}' extensions>"
 
             matching_files.append("<Skip this file>")
             matching_files.append(subfolder_ignore_question)
