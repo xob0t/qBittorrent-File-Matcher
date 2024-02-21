@@ -105,8 +105,7 @@ def windows_get_size_on_disk(file_path: os.PathLike | str) -> int:
     return size_on_disk
 
 def get_size_on_disk(file_path: os.PathLike | str):
-    """Returns the size on disk of the file at file_path in bytes.
-    """
+    """Returns the size on disk of the file at file_path in bytes."""
     if os.name == "posix":
         # st_blocks are 512-byte blocks
         return os.stat(file_path).st_blocks * 512  # type: ignore[attr-defined]
@@ -136,8 +135,7 @@ def are_all_paths_same(
 def hardlink_largest_file(
     matching_files: list[str] | list[Path | str] | list[Path],
 ):
-    """Find the largest file by 'size on disk' among matching_files and hardlink it.
-    """
+    """Find the largest file by 'size on disk' among matching_files and hardlink it."""
     existing_files: list[str | Path] = [file for file in matching_files if Path(file).exists()]
     if not existing_files:
         return
@@ -160,6 +158,15 @@ def hardlink_largest_file(
         # Create hardlink
         print(f"Creating hardlink for '{largest_file}' <-> '{file}'")
         os.link(largest_file, file_path)
+
+def is_relative_to(path1: Path, path2: Path) -> bool:
+    """pathlib.Path in later versions of python already have this builtin"""
+    try:  # pylint: disable=R1705
+        path1.relative_to(path2)
+    except ValueError:
+        return False
+    else:
+        return True
 
 def get_matching_files_in_dir_and_subdirs(
     search_path: Path,
@@ -322,14 +329,6 @@ def match(
 
     return made_change
 
-def is_relative_to(path1: Path, path2: Path) -> bool:
-    try:  # pylint: disable=R1705
-        path1.relative_to(path2)
-    except ValueError:
-        return False
-    else:
-        return True
-
 def set_search_and_download_paths(
     torrent: TorrentDictionary,
     input_search_path: Path | None,
@@ -391,6 +390,8 @@ def matcher(
         print("Connected to api!")
         if not torrents:
             sys.exit(f"{Fore.RED}No torrents found found anywhere in your qBittorrent{Style.RESET_ALL}")
+    else:
+        sys.exit("Nothing to do?")
 
     for torrent in torrents:
         torrent_hash = torrent["hash"].upper()
