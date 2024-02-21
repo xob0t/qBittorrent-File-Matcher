@@ -71,8 +71,60 @@ def init_client() -> Client:
     host, username, password = get_config()
     return Client(host=host, username=username, password=password)
 
+def windows_get_size_on_disk(file_path: os.PathLike | str) -> int:
+    import ctypes
+    from ctypes import wintypes
+    # Define GetCompressedFileSizeW from the Windows API
+    GetCompressedFileSizeW = ctypes.windll.kernel32.GetCompressedFileSizeW
+    GetCompressedFileSizeW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD)]
+    GetCompressedFileSizeW.restype = wintypes.DWORD
 
-def get_matching_files_in_dir_and_subdirs(search_path, sizes: set[int]) -> list[tuple[str, int]]:
+    # Prepare the high-order DWORD
+    filesizehigh = wintypes.DWORD()
+
+    # Call GetCompressedFileSizeW
+    low = GetCompressedFileSizeW(str(file_path), ctypes.byref(filesizehigh))
+
+    if low == 0xFFFFFFFF:  # Check for an error condition.
+        error = ctypes.GetLastError()
+        if error:
+            raise ctypes.WinError(error)
+    
+    # Combine the low and high parts
+    size_on_disk = (filesizehigh.value << 32) + low
+
+    return size_on_disk
+
+def get_size_on_disk(file_path: os.PathLike | str):
+    """
+    Returns the size on disk of the file at file_path in bytes.
+    """
+    if os.name == "posix":
+        return os.stat(file_path).st_blocks * 512  # st_blocks are 512-byte blocks
+    else:
+        return windows_get_size_on_disk(file_path)
+
+def symlink_largest_file(matching_files):
+    """
+    Find the largest file by 'size on disk' among matching_files and symlink it.
+    """
+    largest_file = max(matching_files, key=get_size_on_disk)
+    for file in matching_files:
+        if file == largest_file:
+            continue
+        
+        print(f"Deleting '{file}'")
+        file_path = Path(file)
+        file_path.unlink()
+
+        # Create symlink
+        print(f"Creating symlink for '{largest_file}' -> '{file}'")
+        file_path.symlink_to(largest_file)
+
+def get_matching_files_in_dir_and_subdirs(
+    search_path: Path,
+    sizes: set[int],
+) -> list[tuple[str, int]]:
     files_in_directory: list[str] = [os.path.join(dirpath, name) for dirpath, _, filenames in os.walk(search_path) for name in filenames]
     print(f"Found {len(files_in_directory)} files in the search directory")
 
@@ -85,9 +137,9 @@ IGNORED_EXTENSIONS: set[str] = set()   # To keep track of ignored file extension
 
 def match(
     torrent: TorrentDictionary,
-    files_in_directory,
-    match_extension,
-    download_path,
+    files_in_directory: list[tuple[str, int]],
+    match_extension: bool,
+    download_path: Path,
     is_dry_run: bool,
 ) -> None:
     global IGNORED_EXTENSIONS  # pylint: disable=W0602
@@ -117,32 +169,40 @@ def match(
             extension_to_ignore: str = Path(torrent_file.name).suffix.lower()
             if extension_to_ignore in IGNORED_EXTENSIONS:
                 continue
+            symlink_option = "<Symlink all matches (experimental)>"
 
-            subfolder_ignore_question = f"<Don't ask again for all files in '{subfolder_to_ignore}'>"
-            extension_ignore_question = f"<Don't ask again for all files with '{extension_to_ignore}' extensions>"
+            subfolder_ignore_option = f"<Don't ask again for all files in '{subfolder_to_ignore}'>"
+            extension_ignore_option = f"<Don't ask again for all files with '{extension_to_ignore}' extensions>"
 
-            matching_files.append("<Skip this file>")
-            matching_files.append(subfolder_ignore_question)
-            matching_files.append(extension_ignore_question)
+            choices: list[str] = [
+                *matching_files,
+                "<Skip this file>",
+                subfolder_ignore_option,
+                extension_ignore_option,
+                symlink_option,
+            ]
             print("\n")
             question: list[dict[str, Any]] = [
                 {
                     "type": "list",
                     "message": f"Multiple matches found for '{torrent_file.name}'. Select a file to match:",
-                    "choices": matching_files,
+                    "choices": choices,
                     "name": "file",
                 },
             ]
             response = prompt(question)
             if response["file"] == "<Skip this file>":
                 continue
-            if response["file"] == subfolder_ignore_question:
+            if response["file"] == subfolder_ignore_option:
                 IGNORED_SUBFOLDERS.add(subfolder_to_ignore)
                 print(f"Ignoring subfolder '{subfolder_to_ignore}' for this session.")
                 continue
-            if response["file"] == extension_ignore_question:
+            if response["file"] == extension_ignore_option:
                 IGNORED_EXTENSIONS.add(extension_to_ignore)
                 print(f"Ignoring file extension '{extension_to_ignore}' for this session.")
+                continue
+            if response["file"] == symlink_option:
+                symlink_largest_file(matching_files)
                 continue
 
             selected_file_path = response["file"]
@@ -167,7 +227,19 @@ def match(
         try:
             torrent.rename_file(file_id=torrent_file.id, new_file_name=new_relative_path)  # type: ignore[reportCallIssue]
         except Conflict409Error as e:
-            print(f"{Fore.RED}Skipping {torrent_file.name} due to error:", e)
+            print(f"{Fore.RED}'{torrent_file.name}' error:", e)
+            symlink_question: list[dict[str, Any]] = [
+                {
+                    "type": "list",
+                    "message": "Would you like to attempt symlinking instead?",
+                    "choices": ["yes", "no"],
+                },
+            ]
+            response = prompt(symlink_question)
+            if response == "yes":
+                original_file_path: Path = download_path / str(torrent_file.name)
+                original_file_path.unlink(missing_ok=False)
+                original_file_path.symlink_to(selected_file_path)
         else:
             print(f"Renaming file:\n{torrent_file.name} ->\n{Fore.GREEN}{new_relative_path}{Style.RESET_ALL}")
 
