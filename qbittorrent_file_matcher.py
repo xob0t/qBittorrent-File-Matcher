@@ -116,7 +116,7 @@ def match(
                 },
             ]
             response = prompt(question)
-            if response == "<Skip this file>":
+            if response["file"] == "<Skip this file>":
                 print("user chose to skip, continuing with next torrent...")
                 continue
             
