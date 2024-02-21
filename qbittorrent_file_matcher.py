@@ -135,18 +135,28 @@ def hardlink_largest_file(matching_files):
     """
     Find the largest file by 'size on disk' among matching_files and hardlink it.
     """
-    largest_file = max(matching_files, key=get_size_on_disk)
+    existing_files = [file for file in matching_files if Path(file).exists()]
+    if not existing_files:
+        return
+    largest_file = max(existing_files, key=get_size_on_disk)
+    largest_file_path = Path(largest_file)
+    if not largest_file_path.exists():
+        return
     for file in matching_files:
         if file == largest_file:
             continue
         
-        print(f"Deleting '{file}'")
+        print(f"Deleting '{file}' (if it exists)")
         file_path = Path(file)
-        file_path.unlink()
+        file_path.parent.mkdir(exist_ok=True, parents=True)
+        if file_path.exists() and file_path.is_dir():  # unlink will fail if it's somehow a folder.
+            file_path.rmdir()
+        else:
+            file_path.unlink(missing_ok=True)
 
         # Create hardlink
-        print(f"Creating hardlink for '{largest_file}' -> '{file}'")
-        os.link(largest_file, file)
+        print(f"Creating hardlink for '{largest_file}' <-> '{file}'")
+        os.link(largest_file, file_path)
 
 def get_matching_files_in_dir_and_subdirs(
     search_path: Path,
@@ -167,6 +177,7 @@ def match(
     files_in_directory: list[tuple[str, int]],
     match_extension: bool,
     download_path: Path,
+    use_hardlinks: bool,
     is_dry_run: bool,
 ) -> None:
     global IGNORED_EXTENSIONS  # pylint: disable=W0602
@@ -254,12 +265,17 @@ def match(
         if is_dry_run:
             print(f"{Fore.YELLOW}Dry run:{Style.RESET_ALL}\n{torrent_file.name} ->\n{Fore.YELLOW}{new_relative_path}{Style.RESET_ALL}")
             continue
+        
+        original_file_path: Path = download_path / str(torrent_file.name)
+        if use_hardlinks:
+            print(f"Hardlinking file:\n{torrent_file.name} <--vv\n{Fore.GREEN}{new_relative_path}{Style.RESET_ALL}")
+            hardlink_largest_file([original_file_path, selected_file_path])
+            continue
 
         try:
             torrent.rename_file(file_id=torrent_file.id, new_file_name=new_relative_path)  # type: ignore[reportCallIssue]
         except Conflict409Error as e:
             print(f"{Fore.RED}'{torrent_file.name}' error:", e)
-            original_file_path: Path = download_path / str(torrent_file.name)
             if original_file_path.suffix.lower() in IGNORED_EXTENSIONS:
                 continue
             hardlink_question: list[dict[str, Any]] = [
@@ -270,9 +286,8 @@ def match(
                 },
             ]
             response = prompt(hardlink_question)
-            if response == "yes":
-                original_file_path.unlink(missing_ok=False)
-                os.link(original_file_path, selected_file_path)
+            if response[0] == "yes":
+                hardlink_largest_file([original_file_path, selected_file_path])
         else:
             print(f"Renaming file:\n{torrent_file.name} ->\n{Fore.GREEN}{new_relative_path}{Style.RESET_ALL}")
 
@@ -326,6 +341,7 @@ def matcher(
     input_download_path: Path | None = None,
     use_torrent_save_path_as_search_path: bool = False,
     match_extension: bool = False,
+    use_hardlinks: bool = False,
     is_dry_run: bool = False,
 ):
     qb_client: Client = init_client()  # this doesn't mean we actually connected yet.
@@ -372,7 +388,7 @@ def matcher(
         print(f"Found {len(files_in_directory)} matches in '{search_path}'")
 
         print("Executing matchmaking logic...")
-        match(torrent, files_in_directory, match_extension, download_path, is_dry_run)
+        match(torrent, files_in_directory, match_extension, download_path, use_hardlinks, is_dry_run)
 
         if input_download_path and input_download_path != torrent.save_path and not is_dry_run:
             print(f"Changing torrent save location to {input_download_path}")
@@ -395,6 +411,7 @@ def main() -> None:
     parser.add_argument("-fd", action="store_true", help="Forces search in torrent's download directory. Default is torrent's content directory. Ignored if passed along with search.")
     parser.add_argument("-e", "-ext", action="store_true", help="Forces matched files to share an extension.")
     parser.add_argument("-dry", action="store_true", help="Performs a dry run without modifying anything.")
+    parser.add_argument("-l", "-link", action="store_true", help="Creates hardlinks instead of renaming.")
 
     args = parser.parse_args()
 
@@ -420,6 +437,7 @@ def main() -> None:
         input_download_path,
         args.fd,
         args.e,
+        args.l,
         args.dry,
     )
 
