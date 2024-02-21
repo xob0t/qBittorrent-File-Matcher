@@ -80,6 +80,9 @@ def get_matching_files_in_dir_and_subdirs(search_path, sizes: set[int]) -> list[
 
     return [pair for pair in files_and_sizes if pair[1] in sizes]
 
+IGNORED_SUBFOLDERS: set[Path] = set()  # To keep track of ignored subfolders
+IGNORED_EXTENSIONS: set[str] = set()   # To keep track of ignored file extensions
+
 def match(
     torrent: TorrentDictionary,
     files_in_directory,
@@ -87,10 +90,10 @@ def match(
     download_path,
     is_dry_run: bool,
 ) -> None:
-    matched_files = set()  # keep track of already matched files
-    ignored_subfolders: set[Path] = set()  # To keep track of ignored subfolders
-    ignored_extensions = set()  # To keep track of ignored file extensions
+    global IGNORED_EXTENSIONS  # pylint: disable=W0602
+    global IGNORED_SUBFOLDERS  # pylint: disable=W0602
 
+    matched_files = set()  # keep track of already matched files
     torrent_file: TorrentFile
     for torrent_file in torrent.files:
         if torrent_file.priority == 0:
@@ -106,15 +109,14 @@ def match(
                 == Path(torrent_file.name).suffix.lower()
             )
             and disk_file_abs_path not in matched_files
-            and all(
-                ignored_subfolder not in Path(disk_file_abs_path).parents
-                for ignored_subfolder in ignored_subfolders
-            )
-            and Path(disk_file_abs_path).suffix.lower() not in ignored_extensions
         ]
         if len(matching_files) > 1:
             subfolder_to_ignore: Path = Path(matching_files[0]).parent
+            if subfolder_to_ignore in IGNORED_SUBFOLDERS:
+                continue
             extension_to_ignore: str = Path(torrent_file.name).suffix.lower()
+            if extension_to_ignore in IGNORED_EXTENSIONS:
+                continue
 
             subfolder_ignore_question = f"<Don't ask again for all files in '{subfolder_to_ignore}'>"
             extension_ignore_question = f"<Don't ask again for all files with '{extension_to_ignore}' extensions>"
@@ -135,11 +137,11 @@ def match(
             if response["file"] == "<Skip this file>":
                 continue
             if response["file"] == subfolder_ignore_question:
-                ignored_subfolders.add(subfolder_to_ignore)
+                IGNORED_SUBFOLDERS.add(subfolder_to_ignore)
                 print(f"Ignoring subfolder '{subfolder_to_ignore}' for this session.")
                 continue
             if response["file"] == extension_ignore_question:
-                ignored_extensions.add(extension_to_ignore)
+                IGNORED_EXTENSIONS.add(extension_to_ignore)
                 print(f"Ignoring file extension '{extension_to_ignore}' for this session.")
                 continue
 
