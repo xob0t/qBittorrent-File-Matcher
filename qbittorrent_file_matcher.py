@@ -103,10 +103,37 @@ def get_size_on_disk(file_path: os.PathLike | str):
         return os.stat(file_path).st_blocks * 512  # st_blocks are 512-byte blocks
     else:
         return windows_get_size_on_disk(file_path)
+    
+# From stackoverflow.
+def are_all_paths_same(paths: list[os.PathLike | str] | list[str] | list[os.PathLike]) -> bool:  # sourcery skip: hoist-statement-from-if
+    file_identifiers = set()
+    for path in paths:
+        try:
+            # Resolve symlinks to their target
+            resolved_path = Path(path).resolve(strict=True)
+            # Use os.stat to get file statistics. The follow_symlinks=False argument
+            # is not necessary here since Path.resolve() already resolves them,
+            # but it's used to emphasize the behavior.
+            file_stat = os.stat(resolved_path, follow_symlinks=False)
 
-def symlink_largest_file(matching_files):
+            # Check os.name to adjust behavior if necessary (mainly for readability and future adjustments)
+            if os.name == 'nt':  # Windows
+                file_identifier: tuple[int, int] = (file_stat.st_dev, file_stat.st_ino)
+            else:  # POSIX (Linux, macOS, etc.)
+                file_identifier = (file_stat.st_dev, file_stat.st_ino)
+            
+            file_identifiers.add(file_identifier)
+        except FileNotFoundError:
+            # Handle the case where the path does not exist
+            print(f"Warning: The path '{path}' was not found.")
+            return False
+
+    # If all paths refer to the same device and inode/file index, the set will contain only one unique identifier
+    return len(file_identifiers) == 1
+
+def hardlink_largest_file(matching_files):
     """
-    Find the largest file by 'size on disk' among matching_files and symlink it.
+    Find the largest file by 'size on disk' among matching_files and hardlink it.
     """
     largest_file = max(matching_files, key=get_size_on_disk)
     for file in matching_files:
@@ -117,9 +144,9 @@ def symlink_largest_file(matching_files):
         file_path = Path(file)
         file_path.unlink()
 
-        # Create symlink
-        print(f"Creating symlink for '{largest_file}' -> '{file}'")
-        file_path.symlink_to(largest_file)
+        # Create hardlink
+        print(f"Creating hardlink for '{largest_file}' -> '{file}'")
+        os.link(largest_file, file)
 
 def get_matching_files_in_dir_and_subdirs(
     search_path: Path,
@@ -145,7 +172,7 @@ def match(
     global IGNORED_EXTENSIONS  # pylint: disable=W0602
     global IGNORED_SUBFOLDERS  # pylint: disable=W0602
 
-    matched_files = set()  # keep track of already matched files
+    matched_files: set[str] = set()  # keep track of already matched files
     torrent_file: TorrentFile
     for torrent_file in torrent.files:
         if torrent_file.priority == 0:
@@ -163,13 +190,17 @@ def match(
             and disk_file_abs_path not in matched_files
         ]
         if len(matching_files) > 1:
+            # check if all hardlinked to the same file.
+            if are_all_paths_same(matching_files):
+                continue
+            
             subfolder_to_ignore: Path = Path(matching_files[0]).parent
             if subfolder_to_ignore in IGNORED_SUBFOLDERS:
                 continue
             extension_to_ignore: str = Path(torrent_file.name).suffix.lower()
             if extension_to_ignore in IGNORED_EXTENSIONS:
                 continue
-            symlink_option = "<Symlink all matches (experimental)>"
+            hardlink_option = "<Hardlink all matches (experimental)>"
 
             subfolder_ignore_option = f"<Don't ask again for all files in '{subfolder_to_ignore}'>"
             extension_ignore_option = f"<Don't ask again for all files with '{extension_to_ignore}' extensions>"
@@ -179,7 +210,7 @@ def match(
                 "<Skip this file>",
                 subfolder_ignore_option,
                 extension_ignore_option,
-                symlink_option,
+                hardlink_option,
             ]
             print("\n")
             question: list[dict[str, Any]] = [
@@ -201,8 +232,8 @@ def match(
                 IGNORED_EXTENSIONS.add(extension_to_ignore)
                 print(f"Ignoring file extension '{extension_to_ignore}' for this session.")
                 continue
-            if response["file"] == symlink_option:
-                symlink_largest_file(matching_files)
+            if response["file"] == hardlink_option:
+                hardlink_largest_file(matching_files)
                 continue
 
             selected_file_path = response["file"]
@@ -228,18 +259,20 @@ def match(
             torrent.rename_file(file_id=torrent_file.id, new_file_name=new_relative_path)  # type: ignore[reportCallIssue]
         except Conflict409Error as e:
             print(f"{Fore.RED}'{torrent_file.name}' error:", e)
-            symlink_question: list[dict[str, Any]] = [
+            original_file_path: Path = download_path / str(torrent_file.name)
+            if original_file_path.suffix.lower() in IGNORED_EXTENSIONS:
+                continue
+            hardlink_question: list[dict[str, Any]] = [
                 {
                     "type": "list",
-                    "message": "Would you like to attempt symlinking instead?",
+                    "message": "Would you like to attempt hardlinking instead?",
                     "choices": ["yes", "no"],
                 },
             ]
-            response = prompt(symlink_question)
+            response = prompt(hardlink_question)
             if response == "yes":
-                original_file_path: Path = download_path / str(torrent_file.name)
                 original_file_path.unlink(missing_ok=False)
-                original_file_path.symlink_to(selected_file_path)
+                os.link(original_file_path, selected_file_path)
         else:
             print(f"Renaming file:\n{torrent_file.name} ->\n{Fore.GREEN}{new_relative_path}{Style.RESET_ALL}")
 
@@ -295,10 +328,10 @@ def matcher(
     match_extension: bool = False,
     is_dry_run: bool = False,
 ):
-    qb_client: Client = init_client()
-    print("Connected to api!")
+    qb_client: Client = init_client()  # this doesn't mean we actually connected yet.
     if input_torrent_hashes:
         torrents: TorrentInfoList = qb_client.torrents.info(torrent_hashes=input_torrent_hashes)
+        print("Connected to api!")
         if not torrents:
             sys.exit(f"{Fore.RED}No torrents found matching any of the provided hashes.{Style.RESET_ALL}")
         else:
@@ -308,6 +341,7 @@ def matcher(
                     print(f"{Fore.RED}Torrent with hash '{hash_value}' not found.{Style.RESET_ALL}")
     elif sync_all:
         torrents = qb_client.torrents_info()
+        print("Connected to api!")
         if not torrents:
             sys.exit(f"{Fore.RED}No torrents found found anywhere in your qBittorrent{Style.RESET_ALL}")
     else:
