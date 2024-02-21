@@ -119,9 +119,9 @@ def match(
             subfolder_ignore_question = f"<Ignore all files in '{subfolder_to_ignore}'>"
             extension_ignore_question = f"<Ignore all files with '{extension_to_ignore}' extensions>"
 
-            matching_files.insert(0, "<Skip this file>")
-            matching_files.insert(1, subfolder_ignore_question)
-            matching_files.insert(2, extension_ignore_question)
+            matching_files.append("<Skip this file>")
+            matching_files.append(subfolder_ignore_question)
+            matching_files.append(extension_ignore_question)
             print("\n")
             question: list[dict[str, Any]] = [
                 {
