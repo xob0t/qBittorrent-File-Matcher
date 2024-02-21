@@ -367,7 +367,7 @@ def matcher(
         if not torrents:
             sys.exit(f"{Fore.RED}No torrents found found anywhere in your qBittorrent{Style.RESET_ALL}")
     else:
-        print("Nothing to do? (check the cmdline args passed)")
+        print("Nothing to do? (send -a or an input torrent hash/file)")
         return
 
     for torrent in torrents:
