@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 try:
     from colorama import Fore, Style, init
     from InquirerPy.resolver import prompt
-    from qbittorrentapi import Client, TorrentDictionary, TorrentFile
+    from qbittorrentapi import Client, Conflict409Error, TorrentDictionary, TorrentFile
 except (ImportError, ModuleNotFoundError):
     print(traceback.format_exc())
     print("You need to install the dependencies.")
@@ -162,8 +162,12 @@ def match(
             print(f"{Fore.YELLOW}Dry run:{Style.RESET_ALL}\n{torrent_file.name} ->\n{Fore.YELLOW}{new_relative_path}{Style.RESET_ALL}")
             continue
 
-        print(f"Renaming file:\n{torrent_file.name} ->\n{Fore.GREEN}{new_relative_path}{Style.RESET_ALL}")
-        torrent.rename_file(file_id=torrent_file.id, new_file_name=new_relative_path)  # type: ignore[reportCallIssue]
+        try:
+            torrent.rename_file(file_id=torrent_file.id, new_file_name=new_relative_path)  # type: ignore[reportCallIssue]
+        except Conflict409Error as e:
+            print(f"{Fore.RED}Skipping {torrent_file.name} due to error:", e)
+        else:
+            print(f"Renaming file:\n{torrent_file.name} ->\n{Fore.GREEN}{new_relative_path}{Style.RESET_ALL}")
 
 def is_relative_to(path1: Path, path2: Path):
     try:  # pylint: disable=R1705
