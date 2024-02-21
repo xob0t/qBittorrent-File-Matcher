@@ -121,19 +121,9 @@ def are_all_paths_same(
     file_identifiers = set()
     for path in paths:
         try:
-            # Resolve symlinks to their target
             resolved_path: Path = Path(path).resolve(strict=True)
-            # Use os.stat to get file statistics. The follow_symlinks=False argument
-            # is not necessary here since Path.resolve() already resolves them,
-            # but it's used to emphasize the behavior.
-            file_stat = os.stat(resolved_path, follow_symlinks=False)
-
-            # Check os.name to adjust behavior if necessary (mainly for readability and future adjustments)
-            if os.name == "nt":  # Windows
-                file_identifier: tuple[int, int] = (file_stat.st_dev, file_stat.st_ino)
-            else:  # POSIX (Linux, macOS, etc.)
-                file_identifier = (file_stat.st_dev, file_stat.st_ino)
-
+            file_stat = os.stat(resolved_path, follow_symlinks=True)
+            file_identifier: tuple[int, int] = (file_stat.st_dev, file_stat.st_ino)
             file_identifiers.add(file_identifier)
         except FileNotFoundError:
             # Handle the case where the path does not exist
