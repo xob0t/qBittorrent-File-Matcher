@@ -88,6 +88,9 @@ def match(
     is_dry_run: bool,
 ) -> None:
     matched_files = set()  # keep track of already matched files
+    ignored_subfolders: set[Path] = set()  # To keep track of ignored subfolders
+    ignored_extensions = set()  # To keep track of ignored file extensions
+
     torrent_file: TorrentFile
     for torrent_file in torrent.files:
         if torrent_file.priority == 0:
@@ -96,38 +99,58 @@ def match(
         matching_files: list[str] = [
             disk_file_abs_path
             for disk_file_abs_path, disk_file_size in files_in_directory
-            if (
-                torrent_file.size == disk_file_size
-                and (
-                    not match_extension
-                    or Path(disk_file_abs_path).suffix == Path(torrent_file.name).suffix
-                )
-                and disk_file_abs_path not in matched_files
+            if torrent_file.size == disk_file_size
+            and (
+                not match_extension
+                or Path(disk_file_abs_path).suffix.lower()
+                == Path(torrent_file.name).suffix.lower()
             )
+            and disk_file_abs_path not in matched_files
+            and all(
+                ignored_subfolder not in Path(disk_file_abs_path).parents
+                for ignored_subfolder in ignored_subfolders
+            )
+            and Path(disk_file_abs_path).suffix.lower() not in ignored_extensions
         ]
         if len(matching_files) > 1:
+            subfolder_to_ignore: Path = Path(matching_files[0]).parent
+            extension_to_ignore: str = Path(torrent_file.name).suffix.lower()
+
+            subfolder_ignore_question = f"<Ignore all files in '{subfolder_to_ignore}'>"
+            extension_ignore_question = f"<Ignore all files with '{extension_to_ignore}' extensions>"
+
             matching_files.insert(0, "<Skip this file>")
+            matching_files.insert(1, subfolder_ignore_question)
+            matching_files.insert(2, extension_ignore_question)
+            print("\n")
             question: list[dict[str, Any]] = [
                 {
                     "type": "list",
-                    "message": f"Multiple matches found for {torrent_file.name}. Select a file to match:",
+                    "message": f"Multiple matches found for '{torrent_file.name}'. Select a file to match:",
                     "choices": matching_files,
                     "name": "file",
                 },
             ]
             response = prompt(question)
             if response["file"] == "<Skip this file>":
-                print("user chose to skip, continuing with next torrent...")
                 continue
-            
+            if response["file"] == subfolder_ignore_question:
+                ignored_subfolders.add(subfolder_to_ignore)
+                print(f"Ignoring subfolder '{subfolder_to_ignore}' for this session.")
+                continue
+            if response["file"] == extension_ignore_question:
+                ignored_extensions.add(extension_to_ignore)
+                print(f"Ignoring file extension '{extension_to_ignore}' for this session.")
+                continue
+
             selected_file_path = response["file"]
             assert isinstance(selected_file_path, str)
 
-        elif matching_files:
+        elif matching_files:  # Single match.
             selected_file_path = matching_files[0]
 
         else:
-            print(f"{Fore.RED}No matches found for {torrent_file.name}!{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}No matches found for '{torrent_file.name}'!{Style.RESET_ALL}")
             continue
 
         matched_files.add(selected_file_path)
