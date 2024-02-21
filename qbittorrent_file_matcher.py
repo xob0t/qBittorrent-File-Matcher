@@ -161,11 +161,17 @@ def hardlink_largest_file(matching_files):
 def get_matching_files_in_dir_and_subdirs(
     search_path: Path,
     sizes: set[int],
+    use_hardlinks: bool,
 ) -> list[tuple[str, int]]:
     files_in_directory: list[str] = [os.path.join(dirpath, name) for dirpath, _, filenames in os.walk(search_path) for name in filenames]
     print(f"Found {len(files_in_directory)} files in the search directory")
 
-    files_and_sizes = map(lambda file: (file, os.path.getsize(file)), files_in_directory)
+    files_and_sizes: list[tuple[str, int]] = []
+    for file in files_in_directory:
+        size = os.path.getsize(file)
+        if size <= 512 and use_hardlinks:  # don't do anything with small files if hardlinking.
+            continue
+        files_and_sizes.append((file, size))
 
     return [pair for pair in files_and_sizes if pair[1] in sizes]
 
@@ -384,7 +390,7 @@ def matcher(
         torrent_file_sizes: set[int] = {file.size for file in torrent.files}
 
         print("Scanning files in search directory")
-        files_in_directory: list[tuple[str, int]] = get_matching_files_in_dir_and_subdirs(search_path, torrent_file_sizes)
+        files_in_directory: list[tuple[str, int]] = get_matching_files_in_dir_and_subdirs(search_path, torrent_file_sizes, use_hardlinks)
         print(f"Found {len(files_in_directory)} matches in '{search_path}'")
 
         print("Executing matchmaking logic...")
