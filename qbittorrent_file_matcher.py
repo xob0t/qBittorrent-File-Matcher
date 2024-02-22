@@ -136,24 +136,24 @@ def hardlink_largest_file(
     matching_files: list[str] | list[Path | str] | list[Path],
 ):
     """Find the largest file by 'size on disk' among matching_files and hardlink it."""
-    existing_files: list[str | Path] = [file for file in matching_files if Path(file).exists()]
+    existing_files: set[Path] = {Path(file).resolve() for file in matching_files if Path(file).resolve().exists()}
     if not existing_files:
         print("No files exist on disk to hardlink!")
         return
-    largest_file: str | Path = max(existing_files, key=get_size_on_disk)
-    largest_file_path = Path(largest_file)
-    if not largest_file_path.exists():
+    largest_file: Path = max(existing_files, key=get_size_on_disk)
+    if not largest_file.exists():
         return
     for file in matching_files:
         if file == largest_file:
             continue
 
-        print(f"Deleting '{file}' (if it exists)")
         file_path = Path(file)
         file_path.parent.mkdir(exist_ok=True, parents=True)
         if file_path.exists() and file_path.is_dir():  # unlink will fail if it's somehow a folder.
+            print(f"'{file}' is somehow a directory, rmdir()")
             file_path.rmdir()
         else:
+            print(f"Deleting file '{file}'")
             file_path.unlink(missing_ok=True)
 
         # Create hardlink
@@ -275,6 +275,12 @@ def match(
                 continue
             if response["file"] == hardlink_option:
                 hardlink_largest_file(matching_files)
+                if torrent_file.priority in (0, "0"):
+                    print(f"setting file priority of '{torrent_file.name}' to 1.")
+                    torrent.file_priority(
+                        file_ids=torrent_file.index,
+                        priority=1,
+                    )  # type: ignore[reportCallIssue]
                 #made_change = True
                 continue
 
@@ -313,6 +319,12 @@ def match(
             print(f"Hardlinking file:\n{original_relpath_str} <--vv\n{Fore.GREEN}{new_relative_path_str}{Style.RESET_ALL}")
             args_list: list[Path | str] = [original_file_path, selected_file_path]
             hardlink_largest_file(args_list)
+            if torrent_file.priority in (0, "0"):
+                print(f"setting file priority of '{torrent_file.name}' to 1.")
+                torrent.file_priority(
+                    file_ids=torrent_file.index,
+                    priority=1,
+                )  # type: ignore[reportCallIssue]
             #made_change = True
             continue
 
@@ -321,6 +333,12 @@ def match(
                 file_id=torrent_file.id,
                 new_file_name=new_relative_path_str,
             )  # type: ignore[reportCallIssue]
+            if torrent_file.priority in (0, "0"):
+                print(f"setting file priority of '{torrent_file.name}' to 1.")
+                torrent.file_priority(
+                    file_ids=torrent_file.index,
+                    priority=1,
+                )  # type: ignore[reportCallIssue]
         except Conflict409Error as e:
             print(f"{Fore.RED}'{original_relpath_str}' error:", e)
             if original_file_path.suffix.lower() in IGNORED_EXTENSIONS:
@@ -336,6 +354,12 @@ def match(
             if response[0] == "yes":
                 args_list = [original_file_path, selected_file_path]
                 hardlink_largest_file(args_list)
+                if torrent_file.priority in (0, "0"):
+                    print(f"setting file priority of '{torrent_file.name}' to 1.")
+                    torrent.file_priority(
+                        file_ids=torrent_file.index,
+                        priority=1,
+                    )  # type: ignore[reportCallIssue]
                 #made_change = True
             elif no_redownload:
                 print(f"setting file priority of '{torrent_file.name}' to 0.")
