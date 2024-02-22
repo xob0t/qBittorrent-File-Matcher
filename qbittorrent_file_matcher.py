@@ -275,7 +275,7 @@ def match(
                 continue
             if response["file"] == hardlink_option:
                 hardlink_largest_file(matching_files)
-                made_change = True
+                #made_change = True
                 continue
 
             selected_file_path = response["file"]
@@ -287,14 +287,14 @@ def match(
         else:
             print(f"{Fore.YELLOW}No matches found for '{original_relpath_str}'!{Style.RESET_ALL}")
             if no_redownload:
-                print(f"setting file priority of '{torrent_file.id}' to 0.")
+                print(f"setting file priority of '{torrent_file.name}' to 0.")
                 if is_dry_run:
                     continue
                 torrent.file_priority(
-                    file_id=torrent_file.id,
+                    file_ids=int(torrent_file.index),
                     priority=0,
                 )  # type: ignore[reportCallIssue]
-                made_change = True
+                #made_change = True
             continue
 
         matched_files.add(selected_file_path)
@@ -313,7 +313,7 @@ def match(
             print(f"Hardlinking file:\n{original_relpath_str} <--vv\n{Fore.GREEN}{new_relative_path_str}{Style.RESET_ALL}")
             args_list: list[Path | str] = [original_file_path, selected_file_path]
             hardlink_largest_file(args_list)
-            made_change = True
+            #made_change = True
             continue
 
         try:
@@ -336,17 +336,17 @@ def match(
             if response[0] == "yes":
                 args_list = [original_file_path, selected_file_path]
                 hardlink_largest_file(args_list)
-                made_change = True
+                #made_change = True
             elif no_redownload:
-                print(f"setting file priority of '{torrent_file.id}' to 0.")
+                print(f"setting file priority of '{torrent_file.name}' to 0.")
                 torrent.file_priority(
-                    file_id=torrent_file.id,
+                    file_ids=torrent_file.index,
                     priority=0,
                 )  # type: ignore[reportCallIssue]
-                made_change = True
+                #made_change = True
         else:
             print(f"Renaming file:\n{original_relpath_str} ->\n{Fore.GREEN}{new_relative_path}{Style.RESET_ALL}")
-            made_change = True
+            #made_change = True
 
     return made_change
 
@@ -443,9 +443,11 @@ def matcher(
             qb_client.torrents_set_location(torrent_hashes=torrent_hash, location=str(input_download_path))
             print(f"{Fore.LIGHTMAGENTA_EX}Rechecking torrent{Style.RESET_ALL}")
             qb_client.torrents_recheck(torrent_hash)
+
         elif made_change and not is_dry_run:
             print("Change made, rechecking torrent...")
             qb_client.torrents_recheck(torrent_hash)
+
         if is_dry_run:
             print(f"{Fore.YELLOW}Performed a dry run, nothing was modified{Style.RESET_ALL}")
 
