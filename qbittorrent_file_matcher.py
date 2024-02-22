@@ -225,11 +225,10 @@ def match(
             )
             and disk_file_abs_path not in matched_files
         ]
-        if are_all_paths_same(matching_files):
-            continue  # all hard/symlinked to the same file.
 
         if len(matching_files) > 1:
-
+            if are_all_paths_same(matching_files):
+                continue  # all hard/symlinked to the same file.
             subfolder_to_ignore: Path = Path(matching_files[0]).parent
             if subfolder_to_ignore in IGNORED_SUBFOLDERS:
                 continue
