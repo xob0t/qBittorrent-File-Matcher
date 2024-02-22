@@ -144,21 +144,21 @@ def hardlink_largest_file(
     if not largest_file.exists():
         return
     for file in matching_files:
-        if file == largest_file:
+        r_file = Path(file).resolve()
+        if r_file == largest_file:
             continue
 
-        file_path = Path(file)
-        file_path.parent.mkdir(exist_ok=True, parents=True)
-        if file_path.exists() and file_path.is_dir():  # unlink will fail if it's somehow a folder.
+        r_file.parent.mkdir(exist_ok=True, parents=True)
+        if r_file.exists() and r_file.is_dir():  # unlink will fail if it's somehow a folder.
             print(f"'{file}' is somehow a directory, rmdir()")
-            file_path.rmdir()
+            r_file.rmdir()
         else:
             print(f"Deleting file '{file}'")
-            file_path.unlink(missing_ok=True)
+            r_file.unlink(missing_ok=True)
 
         # Create hardlink
         print(f"Creating hardlink for '{largest_file}' <-> '{file}'")
-        os.link(largest_file, file_path)
+        os.link(largest_file, r_file)
 
 def is_relative_to(path1: Path, path2: Path) -> bool:
     """pathlib.Path in later versions of python already have this builtin"""
