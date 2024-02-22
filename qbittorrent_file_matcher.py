@@ -138,6 +138,7 @@ def hardlink_largest_file(
     """Find the largest file by 'size on disk' among matching_files and hardlink it."""
     existing_files: list[str | Path] = [file for file in matching_files if Path(file).exists()]
     if not existing_files:
+        print("No files exist on disk to hardlink!")
         return
     largest_file: str | Path = max(existing_files, key=get_size_on_disk)
     largest_file_path = Path(largest_file)
@@ -199,6 +200,7 @@ def match(
     download_path: Path,
     use_hardlinks: bool,
     is_dry_run: bool,
+    no_redownload: bool,
 ) -> bool:
     global IGNORED_EXTENSIONS  # pylint: disable=W0602
     global IGNORED_SUBFOLDERS  # pylint: disable=W0602
@@ -229,17 +231,20 @@ def match(
         if len(matching_files) > 1:
             if are_all_paths_same(matching_files):
                 continue  # all hard/symlinked to the same file.
+            if is_dry_run:
+                print("Multiple files found (dryrun - would normally prompt to select)")
+                continue
             subfolder_to_ignore: Path = Path(matching_files[0]).parent
             if subfolder_to_ignore in IGNORED_SUBFOLDERS:
                 continue
             extension_to_ignore: str = original_relpath.suffix.lower()
             if extension_to_ignore in IGNORED_EXTENSIONS:
                 continue
-            hardlink_option = "<Hardlink all matches (experimental)>"
 
             skip_file_option = "<Skip this file>"
             subfolder_ignore_option = f"<Don't ask again (skip) for all files in '{subfolder_to_ignore}'>"
             extension_ignore_option = f"<Don't ask again (skip) for all files with '{extension_to_ignore}' extensions>"
+            hardlink_option = "<Hardlink all matches (experimental)>"
 
             choices: list[str] = [
                 *matching_files,
@@ -280,7 +285,13 @@ def match(
             selected_file_path = matching_files[0]
 
         else:
-            print(f"{Fore.YELLOW}No matches found for '{original_relpath_str}'!{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}No matches found for '{original_relpath_str}'! setting file priority of {torrent_file.id} to 0.{Style.RESET_ALL}")
+            if not is_dry_run and no_redownload:
+                torrent.file_priority(
+                    file_id=torrent_file.id,
+                    priority=0,
+                )  # type: ignore[reportCallIssue]
+                made_change = True
             continue
 
         matched_files.add(selected_file_path)
@@ -322,6 +333,13 @@ def match(
             if response[0] == "yes":
                 args_list = [original_file_path, selected_file_path]
                 hardlink_largest_file(args_list)
+                made_change = True
+            elif no_redownload:
+                torrent.file_priority(
+                    file_id=torrent_file.id,
+                    priority=0,
+                )  # type: ignore[reportCallIssue]
+                made_change = True
         else:
             print(f"Renaming file:\n{original_relpath_str} ->\n{Fore.GREEN}{new_relative_path}{Style.RESET_ALL}")
             made_change = True
@@ -371,6 +389,7 @@ def matcher(
     use_torrent_save_path_as_search_path: bool = False,
     match_extension: bool = False,
     use_hardlinks: bool = False,
+    no_redownload: bool = False,
     is_dry_run: bool = False,
 ):
     qb_client: Client = init_client()  # this doesn't mean we actually connected yet.
@@ -413,7 +432,7 @@ def matcher(
         print("Scanning files in search directory")
         files_in_directory: list[tuple[str, int]] = get_matching_files_in_dir_and_subdirs(search_path, torrent_file_sizes, use_hardlinks)
         print(f"Found {len(files_in_directory)} matches in '{search_path}'")
-        made_change: bool = match(torrent, files_in_directory, match_extension, download_path, use_hardlinks, is_dry_run)
+        made_change: bool = match(torrent, files_in_directory, match_extension, download_path, use_hardlinks, is_dry_run, no_redownload)
 
         if input_download_path and input_download_path != torrent.save_path and not is_dry_run:
             print(f"Changing torrent save location to {input_download_path}")
@@ -421,6 +440,7 @@ def matcher(
             print(f"{Fore.LIGHTMAGENTA_EX}Rechecking torrent{Style.RESET_ALL}")
             qb_client.torrents_recheck(torrent_hash)
         elif made_change:
+            print("Change made, rechecking torrent...")
             qb_client.torrents_recheck(torrent_hash)
         if is_dry_run:
             print(f"{Fore.YELLOW}Performed a dry run, nothing was modified{Style.RESET_ALL}")
@@ -439,6 +459,7 @@ def main() -> None:
     parser.add_argument("-e", "-ext", action="store_true", help="Forces matched files to share an extension.")
     parser.add_argument("-dry", action="store_true", help="Performs a dry run without modifying anything.")
     parser.add_argument("-l", "-link", action="store_true", help="Creates hardlinks instead of renaming.")
+    parser.add_argument("-nodl", "-no_download", action="store_true", help="If file not found on disk, tell qBittorrent to set priority of that file to 0.")
     #parser.add_argument("-f", "-find", action="store_true", help="Searches filenames to find matching torrents, when that file can't be found in another torrent.")
 
     args = parser.parse_args()
@@ -459,11 +480,11 @@ def main() -> None:
         sys.exit(f"bad download path: '{input_download_path}' (either nonexistent or not a directory)")
 
     if args.a and args.input:
+        parser.print_help()
         sys.exit("Cannot use both '-a' and input hash in the same command.")
     if not args.input and not args.a:
         parser.print_help()
         sys.exit("Nothing to do? (must pass `-all` OR an input torrent hash/file)")
-        
 
     matcher(
         input_torrent_hashes=hashes,
@@ -473,6 +494,7 @@ def main() -> None:
         use_torrent_save_path_as_search_path=args.fd,
         match_extension=args.e,
         use_hardlinks=args.l,
+        no_redownload=args.nodl,
         is_dry_run=args.dry,
     )
 
