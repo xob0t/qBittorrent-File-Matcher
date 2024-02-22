@@ -285,8 +285,11 @@ def match(
             selected_file_path = matching_files[0]
 
         else:
-            print(f"{Fore.YELLOW}No matches found for '{original_relpath_str}'! setting file priority of {torrent_file.id} to 0.{Style.RESET_ALL}")
-            if not is_dry_run and no_redownload:
+            print(f"{Fore.YELLOW}No matches found for '{original_relpath_str}'!{Style.RESET_ALL}")
+            if no_redownload:
+                print(f"setting file priority of {torrent_file.id} to 0.")
+                if is_dry_run:
+                    continue
                 torrent.file_priority(
                     file_id=torrent_file.id,
                     priority=0,
@@ -439,7 +442,7 @@ def matcher(
             qb_client.torrents_set_location(torrent_hashes=torrent_hash, location=str(input_download_path))
             print(f"{Fore.LIGHTMAGENTA_EX}Rechecking torrent{Style.RESET_ALL}")
             qb_client.torrents_recheck(torrent_hash)
-        elif made_change:
+        elif made_change and not is_dry_run:
             print("Change made, rechecking torrent...")
             qb_client.torrents_recheck(torrent_hash)
         if is_dry_run:
