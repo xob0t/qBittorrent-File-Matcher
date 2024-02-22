@@ -287,7 +287,7 @@ def match(
         else:
             print(f"{Fore.YELLOW}No matches found for '{original_relpath_str}'!{Style.RESET_ALL}")
             if no_redownload:
-                print(f"setting file priority of {torrent_file.id} to 0.")
+                print(f"setting file priority of '{torrent_file.id}' to 0.")
                 if is_dry_run:
                     continue
                 torrent.file_priority(
@@ -338,6 +338,7 @@ def match(
                 hardlink_largest_file(args_list)
                 made_change = True
             elif no_redownload:
+                print(f"setting file priority of '{torrent_file.id}' to 0.")
                 torrent.file_priority(
                     file_id=torrent_file.id,
                     priority=0,
