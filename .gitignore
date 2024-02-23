@@ -1,0 +1,6 @@
+
+.venv
+client.ini
+build
+dist
+*.spec
