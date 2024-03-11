@@ -5,15 +5,17 @@ import configparser
 import os
 import sys
 import traceback
-from pathlib import Path, PurePath
+from pathlib import Path, PurePath, PureWindowsPath
 from typing import TYPE_CHECKING, Any
+
+from qbittorrentapi import TorrentFilesList
 
 if os.name == "nt":
     import ctypes
     from ctypes import wintypes
 
 if sys.version_info < (3, 7, 0):
-    sys.exit("Script requires at least python 3.7, please upgrade and try again.")
+    sys.exit("This script requires at least python 3.7, you are running {sys.version_info}. Please upgrade your Python installation.")
 
 try:  # sourcery skip: remove-redundant-exception, simplify-single-exception-tuple
     from colorama import Fore, Style, init
@@ -293,7 +295,7 @@ def match(
         else:
             print(f"{Fore.YELLOW}No matches found for '{original_relpath_str}'!{Style.RESET_ALL}")
             if no_redownload:
-                print(f"setting file priority of '{torrent_file.name}' to 0.")
+                print(f"Setting file priority of '{torrent_file.name}' to 0.")
                 if is_dry_run:
                     continue
                 torrent.file_priority(
@@ -419,6 +421,7 @@ def matcher(
     use_hardlinks: bool = False,
     no_redownload: bool = False,
     is_dry_run: bool = False,
+    priority_settings: list[tuple[str, int]] = [],
 ):
     qb_client: Client = init_client()  # this doesn't mean we actually connected yet.
     if input_torrent_hashes:
@@ -431,7 +434,7 @@ def matcher(
             for hash_value in input_torrent_hashes:
                 if hash_value not in found_hashes:
                     print(f"{Fore.RED}Torrent with hash '{hash_value}' not found.{Style.RESET_ALL}")
-    elif sync_all:
+    elif sync_all or priority_settings:
         torrents = qb_client.torrents_info()
         print("Connected to api!")
         if not torrents:
@@ -439,9 +442,37 @@ def matcher(
     else:
         sys.exit("Nothing to do?")
 
+    torrent: TorrentDictionary
     for torrent in torrents:
-        torrent_hash = torrent["hash"].upper()
-        print(f"\nTarget torrent: {torrent.name}")
+        torrent_hash: str = torrent["hash"].upper()  # type: ignore[union-attr]
+        #print(f"\nTarget torrent: {torrent.name}")
+        # Process the priority settings before processing files
+        if priority_settings:
+            torrent_file: TorrentFile
+            for torrent_file in torrent.files:  # type: ignore[reportAttributeAccessIssue]
+                assert isinstance(torrent_file, TorrentFile)
+                torfilenamecheck = PureWindowsPath(torrent_file.name.replace("/", "\\")).name.lower()
+                for pattern, priority_value in priority_settings:
+                    if pattern.lower() in torfilenamecheck:
+                        print(f"Setting priority of file '{torrent_file.name}' to {priority_value} as it matches the pattern '{pattern}'.")
+                        if is_dry_run:
+                            continue
+                        qb_client.torrents_file_priority(  # type: ignore[reportCallIssue]
+                            torrent_hash=torrent_hash,
+                            file_ids=torrent_file.index,
+                            priority=priority_value,
+                        )
+                        torrent.file_priority(
+                            file_ids=torrent_file.index,
+                            priority=priority_value,
+                        )  # type: ignore[reportCallIssue]
+                        torlist: TorrentFilesList = qb_client.torrents.files(torrent_hash, indexes=torrent_file.index)  # type: ignore[reportArgumentType]
+                        refreshed_torrent: TorrentFile = torlist[0]
+                        assert refreshed_torrent.priority == priority_value, f"priority of {torrent_file.name} ({refreshed_torrent.priority}) does not match the new priority ({priority_value})"
+                        continue
+                    else: ...
+                        #print("debug: ", torfilenamecheck, "pattern", pattern.lower())
+            continue  # priority settings aren't compatible with any other cli args (yet)
         search_path , download_path = set_search_and_download_paths(
             torrent,
             input_search_path,
@@ -490,6 +521,8 @@ def main() -> None:
     parser.add_argument("-dry", action="store_true", help="Performs a dry run without modifying anything.")
     parser.add_argument("-l", "-link", action="store_true", help="Creates hardlinks instead of renaming.")
     parser.add_argument("-nodl", "-no_download", action="store_true", help="If file not found on disk, tell qBittorrent to set priority of that file to 0.")
+    parser.add_argument("-p", "--priority", action="append", nargs=2, metavar=('PATTERN', 'PRIORITY'),
+                        help="Set priority for files matching the pattern. Usage: -p PATTERN PRIORITY")
     #parser.add_argument("-f", "-find", action="store_true", help="Searches filenames to find matching torrents, when that file can't be found in another torrent.")
 
     args = parser.parse_args()
@@ -508,11 +541,24 @@ def main() -> None:
     input_download_path: Path | None = Path(args.d) if args.d else None
     if input_download_path and (not input_download_path.exists() or input_download_path.is_file()):
         sys.exit(f"bad download path: '{input_download_path}' (either nonexistent or not a directory)")
+    # Process priority pattern and values
+    priority_settings = []
+    if args.priority:
+        for pattern, priority in args.priority:
+            priority_value = int(priority)  # Convert priority to an integer
+            if Path(pattern).is_absolute() and Path(pattern).is_file():  # Check if it's an absolute file path
+                with open(pattern, 'r') as file:
+                    for line in file:
+                        stripped_line = line.strip()
+                        if stripped_line:
+                            priority_settings.append((stripped_line, priority_value))
+            else:
+                priority_settings.append((pattern, priority_value))
 
     if args.a and args.input:
         parser.print_help()
         sys.exit("Cannot use both '-a' and input hash in the same command.")
-    if not args.input and not args.a:
+    if not args.input and not args.a and not priority_settings:
         parser.print_help()
         sys.exit("Nothing to do? (must pass `-all` OR an input torrent hash/file)")
 
@@ -526,6 +572,7 @@ def main() -> None:
         use_hardlinks=args.l,
         no_redownload=args.nodl,
         is_dry_run=args.dry,
+        priority_settings=priority_settings,
     )
 
 if __name__ == "__main__":
