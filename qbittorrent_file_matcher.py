@@ -16,7 +16,7 @@ if os.name == "nt":
     from ctypes import wintypes
 
 if sys.version_info < (3, 7, 0):
-    sys.exit("This script requires at least python 3.7, you are running {sys.version_info}. Please upgrade your Python installation.")
+    sys.exit(f"This script requires at least python 3.7, you are running {sys.version_info}. Please upgrade your Python installation.")
 
 try:  # sourcery skip: remove-redundant-exception, simplify-single-exception-tuple
     from colorama import Fore, Style, init
