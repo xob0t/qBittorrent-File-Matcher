@@ -421,7 +421,7 @@ def matcher(
     use_hardlinks: bool = False,
     no_redownload: bool = False,
     is_dry_run: bool = False,
-    priority_settings: list[tuple[str, int]] = [],
+    priority_settings: list[tuple[str, int, bool]] = [],
 ):
     qb_client: Client = init_client()  # this doesn't mean we actually connected yet.
     if input_torrent_hashes:
@@ -441,19 +441,26 @@ def matcher(
             sys.exit(f"{Fore.RED}No torrents found found anywhere in your qBittorrent{Style.RESET_ALL}")
     else:
         sys.exit("Nothing to do?")
+    # TODO: move above code to separate function that'll return (qb_client, torrents)
 
     torrent: TorrentDictionary
     for torrent in torrents:
         torrent_hash: str = torrent["hash"].upper()  # type: ignore[union-attr]
+        torrent_save_path = Path(torrent.save_path)  # Get the save path of the torrent
         #print(f"\nTarget torrent: {torrent.name}")
         # Process the priority settings before processing files
         if priority_settings:
             torrent_file: TorrentFile
             for torrent_file in torrent.files:  # type: ignore[reportAttributeAccessIssue]
                 assert isinstance(torrent_file, TorrentFile)
-                torfilenamecheck = PureWindowsPath(torrent_file.name.replace("/", "\\")).name.lower()
-                for pattern, priority_value in priority_settings:
-                    if pattern.lower() in torfilenamecheck:
+                t_filename_check = PureWindowsPath(torrent_file.name.replace("/", "\\")).name.lower()
+                t_absolute_path = torrent_save_path / str(torrent_file.name)
+                pattern_found = False
+                for pattern, priority_value, should_delete in priority_settings:
+                    if pattern.lower() in t_filename_check.lower():
+                        pattern_found = True
+                        if torrent_file.priority in {int(priority_value), str(priority_value)}:
+                            continue
                         print(f"Setting priority of file '{torrent_file.name}' to {priority_value} as it matches the pattern '{pattern}'.")
                         if is_dry_run:
                             continue
@@ -466,12 +473,18 @@ def matcher(
                             file_ids=torrent_file.index,
                             priority=priority_value,
                         )  # type: ignore[reportCallIssue]
-                        torlist: TorrentFilesList = qb_client.torrents.files(torrent_hash, indexes=torrent_file.index)  # type: ignore[reportArgumentType]
-                        refreshed_torrent: TorrentFile = torlist[0]
-                        assert refreshed_torrent.priority == priority_value, f"priority of {torrent_file.name} ({refreshed_torrent.priority}) does not match the new priority ({priority_value})"
                         continue
-                    else: ...
-                        #print("debug: ", torfilenamecheck, "pattern", pattern.lower())
+                    else:
+                        ...
+                if not pattern_found:  # Don't delete files when the pattern wasn't found. Stops unrelated 0-priority files that weren't scanned from being deleted.
+                    continue
+                torlist: TorrentFilesList = qb_client.torrents.files(torrent_hash, indexes=torrent_file.index)  # type: ignore[reportArgumentType]
+                refreshed_torrent: TorrentFile = torlist[0]
+                if refreshed_torrent.priority == 0 and should_delete:
+                    print(f"Deleting '{t_absolute_path}'")
+                    if is_dry_run:
+                        continue
+                    t_absolute_path.unlink(missing_ok=True)
             continue  # priority settings aren't compatible with any other cli args (yet)
         search_path , download_path = set_search_and_download_paths(
             torrent,
@@ -522,7 +535,7 @@ def main() -> None:
     parser.add_argument("-l", "-link", action="store_true", help="Creates hardlinks instead of renaming.")
     parser.add_argument("-nodl", "-no_download", action="store_true", help="If file not found on disk, tell qBittorrent to set priority of that file to 0.")
     parser.add_argument("-p", "--priority", action="append", nargs=2, metavar=('PATTERN', 'PRIORITY'),
-                        help="Set priority for files matching the pattern. Usage: -p PATTERN PRIORITY")
+                        help="Set priority for files matching the pattern. Pattern is either an int (0-4) or the literal str 'DELETE'.")
     #parser.add_argument("-f", "-find", action="store_true", help="Searches filenames to find matching torrents, when that file can't be found in another torrent.")
 
     args = parser.parse_args()
@@ -545,15 +558,39 @@ def main() -> None:
     priority_settings = []
     if args.priority:
         for pattern, priority in args.priority:
-            priority_value = int(priority)  # Convert priority to an integer
-            if Path(pattern).is_absolute() and Path(pattern).is_file():  # Check if it's an absolute file path
-                with open(pattern, 'r') as file:
-                    for line in file:
-                        stripped_line = line.strip()
-                        if stripped_line:
-                            priority_settings.append((stripped_line, priority_value))
+            delete_file = False  # Default delete flag to False
+            try:
+                priority_value = int(priority)  # Convert priority to an integer
+            except ValueError:  # not an int
+                if priority.upper() != "DELETE":
+                    raise ValueError(f"Bad priority value {priority_value}, expected a number between 0-3 or literal str 'DELETE'")
+                delete_file = True
+                priority_value = 0
+            pattern_path = Path(pattern)
+            if pattern_path.is_absolute() and pattern_path.is_file():  # Check if it's an absolute file path
+                pattern_path_str = str(pattern_path)
+                pattern_prompt_response = None
+                if (  # really validate it's a path.
+                    len(pattern_path_str) < 8
+                    and len(pattern_path.parts) <= 2
+                ):
+                    pattern_path_question: list[dict[str, Any]] = [
+                        {
+                            "type": "list",
+                            "message": f"You've entered the pattern '{pattern_path_str}', is this a file on disk with the patterns or the pattern itself?",
+                            "choices": ["It's a filepath", "It's a pattern"],
+                        },
+                    ]
+                    pattern_prompt_response = prompt(pattern_path_question)
+                if pattern_prompt_response is None or pattern_prompt_response[0] == "It's a filepath":
+                    with pattern_path.open(mode="r", encoding="utf-8") as file:
+                        for line in file:
+                            stripped_line = line.strip()
+                            if not stripped_line:
+                                continue
+                            priority_settings.append((stripped_line, priority_value, delete_file))
             else:
-                priority_settings.append((pattern, priority_value))
+                priority_settings.append((pattern, priority_value, delete_file))
 
     if args.a and args.input:
         parser.print_help()
