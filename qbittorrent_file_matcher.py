@@ -4,6 +4,7 @@ import argparse
 import configparser
 import os
 import sys
+from time import sleep
 import traceback
 from pathlib import Path, PurePath, PureWindowsPath
 from typing import TYPE_CHECKING, Any
@@ -455,10 +456,10 @@ def matcher(
                 assert isinstance(torrent_file, TorrentFile)
                 t_filename_check = PureWindowsPath(torrent_file.name.replace("/", "\\")).name.lower()
                 t_absolute_path = torrent_save_path / str(torrent_file.name)
-                pattern_found = False
+                delete_pattern_found = False
                 for pattern, priority_value, should_delete in priority_settings:
                     if pattern.lower() in t_filename_check.lower():
-                        pattern_found = True
+                        delete_pattern_found = priority_value in {0, "0"}
                         if torrent_file.priority in {int(priority_value), str(priority_value)}:
                             continue
                         print(f"Setting priority of file '{torrent_file.name}' to {priority_value} as it matches the pattern '{pattern}'.")
@@ -476,15 +477,29 @@ def matcher(
                         continue
                     else:
                         ...
-                if not pattern_found:  # Don't delete files when the pattern wasn't found. Stops unrelated 0-priority files that weren't scanned from being deleted.
+                if not delete_pattern_found:  # Don't delete files when the pattern wasn't found. Stops unrelated 0-priority files that weren't scanned from being deleted.
                     continue
                 torlist: TorrentFilesList = qb_client.torrents.files(torrent_hash, indexes=torrent_file.index)  # type: ignore[reportArgumentType]
                 refreshed_torrent: TorrentFile = torlist[0]
                 if refreshed_torrent.priority == 0 and should_delete:
-                    print(f"Deleting '{t_absolute_path}'")
                     if is_dry_run:
+                        print(f"dryrun: would delete '{t_absolute_path}'")
                         continue
-                    t_absolute_path.unlink(missing_ok=True)
+                    if not t_absolute_path.exists() or not t_absolute_path.is_file():
+                        continue
+                    qb_client.torrents_pause(  # type: ignore[reportCallIssue]
+                        torrent_hashes=torrent_hash,
+                    )
+                    sleep(1)
+                    try:
+                        t_absolute_path.unlink(missing_ok=True)
+                    except PermissionError as e:
+                        print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.MAGENTA}Deleted '{t_absolute_path}'{Style.RESET_ALL}")
+                    qb_client.torrents_resume(  # type: ignore[reportCallIssue]
+                        torrent_hashes=torrent_hash,
+                    )
             continue  # priority settings aren't compatible with any other cli args (yet)
         search_path , download_path = set_search_and_download_paths(
             torrent,
