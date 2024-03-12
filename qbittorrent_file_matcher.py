@@ -487,19 +487,22 @@ def matcher(
                         continue
                     if not t_absolute_path.exists() or not t_absolute_path.is_file():
                         continue
-                    qb_client.torrents_pause(  # type: ignore[reportCallIssue]
-                        torrent_hashes=torrent_hash,
-                    )
-                    sleep(1)
+                    if os.name == "nt":
+                        # We must pause as qb could still be accessing the file...
+                        qb_client.torrents_pause(  # type: ignore[reportCallIssue]
+                            torrent_hashes=torrent_hash,
+                        )
+                        sleep(1)  # Wait for the torrent to pause.
                     try:
                         t_absolute_path.unlink(missing_ok=True)
                     except PermissionError as e:
                         print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
                     else:
                         print(f"{Fore.MAGENTA}Deleted '{t_absolute_path}'{Style.RESET_ALL}")
-                    qb_client.torrents_resume(  # type: ignore[reportCallIssue]
-                        torrent_hashes=torrent_hash,
-                    )
+                    if os.name == "nt":
+                        qb_client.torrents_resume(  # type: ignore[reportCallIssue]
+                            torrent_hashes=torrent_hash,
+                        )
             continue  # priority settings aren't compatible with any other cli args (yet)
         search_path , download_path = set_search_and_download_paths(
             torrent,
