@@ -186,8 +186,12 @@ def get_matching_files_in_dir_and_subdirs(
 
     files_and_sizes: list[tuple[str, int]] = []
     for file in files_in_directory:
-        size: int = os.path.getsize(file)
-        if size <= 512 and use_hardlinks:  # don't do anything with small files if hardlinking.
+        try:
+            size: int = os.path.getsize(file)
+            if size <= 512 and use_hardlinks:  # don't do anything with small files if hardlinking.
+                continue
+        except FileNotFoundError as e:
+            print(f"{Fore.RED}Somehow os.walk found a file that does not exist: {e}{Fore.RESET}")
             continue
         files_and_sizes.append((file, size))
 
