@@ -475,8 +475,6 @@ def matcher(
                             priority=priority_value,
                         )  # type: ignore[reportCallIssue]
                         continue
-                    else:
-                        ...
                 if not delete_pattern_found:  # Don't delete files when the pattern wasn't found. Stops unrelated 0-priority files that weren't scanned from being deleted.
                     continue
                 torlist: TorrentFilesList = qb_client.torrents.files(torrent_hash, indexes=torrent_file.index)  # type: ignore[reportArgumentType]
