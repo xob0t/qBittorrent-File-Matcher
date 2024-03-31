@@ -315,7 +315,7 @@ def match(
         new_relative_path: Path = Path(selected_file_path).relative_to(download_path)
         new_relative_path_str: str = new_relative_path.as_posix()
         if new_relative_path == original_relpath:
-            print(f"{original_relpath_str} already synced, left as is")
+            #print(f"{original_relpath_str} already synced, left as is")
             continue
 
         if is_dry_run:
