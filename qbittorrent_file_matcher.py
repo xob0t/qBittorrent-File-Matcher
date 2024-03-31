@@ -592,7 +592,7 @@ def main() -> None:
                 priority_value = int(priority)  # Convert priority to an integer
             except ValueError:  # not an int
                 if priority.upper() != "DELETE":
-                    raise ValueError(f"Bad priority value {priority_value}, expected a number between 0-3 or literal str 'DELETE'")
+                    raise ValueError(f"Bad priority value {priority}, expected a number between 0-3 or literal str 'DELETE'")
                 delete_file = True
                 priority_value = 0
             pattern_path = Path(pattern)
