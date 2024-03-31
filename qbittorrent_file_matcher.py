@@ -4,9 +4,9 @@ import argparse
 import configparser
 import os
 import sys
-from time import sleep
 import traceback
 from pathlib import Path, PurePath, PureWindowsPath
+from time import sleep
 from typing import TYPE_CHECKING, Any
 
 from qbittorrentapi import TorrentFilesList
@@ -30,6 +30,8 @@ except (ImportError, ModuleNotFoundError):
     sys.exit()
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from qbittorrentapi import TorrentInfoList
 
 def get_config() -> tuple[str, str, str]:
@@ -117,7 +119,7 @@ def get_size_on_disk(file_path: os.PathLike | str):
 
 # From stackoverflow.
 def are_all_paths_same(
-    paths: list[os.PathLike | str] | list[str] | list[os.PathLike],
+    paths: Sequence[os.PathLike | str],
 ) -> bool:
     # sourcery skip: assign-if-exp, hoist-statement-from-if, remove-redundant-condition
     file_identifiers = set()
