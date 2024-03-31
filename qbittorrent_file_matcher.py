@@ -530,9 +530,8 @@ def matcher(
         # Unfortunately hashing individual files isn't possible (or at least practical), so we match with their sizes.
         torrent_file_sizes: set[int] = {file.size for file in torrent.files if file.size}
 
-        print("Scanning files in search directory")
         files_in_directory: list[tuple[str, int]] = get_matching_files_in_dir_and_subdirs(search_path, torrent_file_sizes, use_hardlinks)
-        print(f"Found {len(files_in_directory)} matches in '{search_path}'")
+        print(f"Found {len(files_in_directory)} matches in search path '{search_path}'")
         made_change: bool = match(torrent, files_in_directory, match_extension, download_path, use_hardlinks, is_dry_run, no_redownload)
 
         if input_download_path and input_download_path != torrent.save_path and not is_dry_run:
