@@ -184,7 +184,7 @@ def get_matching_files_in_dir_and_subdirs(
         for dirpath, _, filenames in os.walk(search_path)
         for name in filenames
     ]
-    print(f"Found {len(files_in_directory)} files in the search directory")
+    #print(f"Found {len(files_in_directory)} files in the search directory")
 
     files_and_sizes: list[tuple[str, int]] = []
     for file in files_in_directory:
@@ -429,6 +429,7 @@ def matcher(
     no_redownload: bool = False,
     is_dry_run: bool = False,
     priority_settings: list[tuple[str, int, bool]] = [],
+    delete_nodls: bool = False,
 ):
     qb_client: Client = init_client()  # this doesn't mean we actually connected yet.
     if input_torrent_hashes:
@@ -455,67 +456,66 @@ def matcher(
         torrent_hash: str = torrent["hash"].upper()  # type: ignore[union-attr]
         torrent_save_path = Path(torrent.save_path)  # Get the save path of the torrent
         #print(f"\nTarget torrent: {torrent.name}")
-        # Process the priority settings before processing files
-        if priority_settings:
-            torrent_file: TorrentFile
-            for torrent_file in torrent.files:  # type: ignore[reportAttributeAccessIssue]
-                assert isinstance(torrent_file, TorrentFile)
-                t_filename_check = PureWindowsPath(torrent_file.name.replace("/", "\\")).name.lower()
-                t_absolute_path = torrent_save_path / str(torrent_file.name)
-                delete_pattern_found = False
-                for pattern, priority_value, should_delete in priority_settings:
-                    if pattern.lower() in t_filename_check.lower():
-                        delete_pattern_found = priority_value in {0, "0"}
-                        if torrent_file.priority in {int(priority_value), str(priority_value)}:
-                            continue
-                        print(f"Setting priority of file '{torrent_file.name}' to {priority_value} as it matches the pattern '{pattern}'.")
-                        if is_dry_run:
-                            continue
-                        qb_client.torrents_file_priority(  # type: ignore[reportCallIssue]
-                            torrent_hash=torrent_hash,
-                            file_ids=torrent_file.index,
-                            priority=priority_value,
-                        )
-                        torrent.file_priority(
-                            file_ids=torrent_file.index,
-                            priority=priority_value,
-                        )  # type: ignore[reportCallIssue]
+        torrent_file: TorrentFile
+        for torrent_file in torrent.files:  # type: ignore[reportAttributeAccessIssue]
+            assert isinstance(torrent_file, TorrentFile)
+            t_filename_check = PureWindowsPath(torrent_file.name.replace("/", "\\")).name.lower()
+            t_absolute_path = torrent_save_path / str(torrent_file.name)
+            delete_pattern_found = False
+            for pattern, priority_value, should_delete in priority_settings:
+                if pattern.lower() in t_filename_check.lower():
+                    delete_pattern_found = priority_value in {0, "0"}
+                    if torrent_file.priority in {int(priority_value), str(priority_value)}:
                         continue
-                if not delete_pattern_found:  # Don't delete files when the pattern wasn't found. Stops unrelated 0-priority files that weren't scanned from being deleted.
-                    continue
-                torlist: TorrentFilesList = qb_client.torrents.files(torrent_hash, indexes=torrent_file.index)  # type: ignore[reportArgumentType]
-                refreshed_torrent: TorrentFile = torlist[0]
-                if refreshed_torrent.priority == 0 and should_delete:
+                    print(f"Setting priority of file '{torrent_file.name}' to {priority_value} as it matches the pattern '{pattern}'.")
                     if is_dry_run:
-                        print(f"dryrun: would delete '{t_absolute_path}'")
                         continue
-                    if not t_absolute_path.exists() or not t_absolute_path.is_file():
-                        continue
-                    should_resume = False
-                    try:
-                        t_absolute_path.unlink(missing_ok=True)
-                    except PermissionError as e:
-                        if os.name == "nt":
-                            should_resume = True
-                            print("could not delete, qb might be using it. Pausing torrent temporarily...")
-                            # We must pause as qb could still be accessing the file...
-                            qb_client.torrents_pause(  # type: ignore[reportCallIssue]
-                                torrent_hashes=torrent_hash,
-                            )
-                            sleep(1)  # Wait for the torrent to pause.
-                            try:
-                                t_absolute_path.unlink(missing_ok=True)
-                            except PermissionError:
-                                print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
-                                should_resume = False
-                            else:
-                                print(f"{Fore.MAGENTA}Deleted '{t_absolute_path}'{Style.RESET_ALL}")
-                    else:
-                        print(f"{Fore.MAGENTA}Deleted '{t_absolute_path}'{Style.RESET_ALL}")
-                    if os.name == "nt" and should_resume:
-                        qb_client.torrents_resume(  # type: ignore[reportCallIssue]
+                    qb_client.torrents_file_priority(  # type: ignore[reportCallIssue]
+                        torrent_hash=torrent_hash,
+                        file_ids=torrent_file.index,
+                        priority=priority_value,
+                    )
+                    torrent.file_priority(
+                        file_ids=torrent_file.index,
+                        priority=priority_value,
+                    )  # type: ignore[reportCallIssue]
+                    continue
+            if not delete_nodls and not delete_pattern_found:  # Don't delete files when the pattern wasn't found. Stops unrelated 0-priority files that weren't scanned from being deleted.
+                continue
+            torlist: TorrentFilesList = qb_client.torrents.files(torrent_hash, indexes=torrent_file.index)  # type: ignore[reportArgumentType]
+            refreshed_torrent: TorrentFile = torlist[0]
+            if refreshed_torrent.priority == 0 and (delete_nodls or should_delete):
+                if is_dry_run:
+                    print(f"dryrun: would delete '{t_absolute_path}'")
+                    continue
+                if not t_absolute_path.exists() or not t_absolute_path.is_file():
+                    continue
+                should_resume = False
+                try:
+                    t_absolute_path.unlink(missing_ok=True)
+                except PermissionError as e:
+                    if os.name == "nt":
+                        should_resume = True
+                        print("could not delete, qb might be using it. Pausing torrent temporarily...")
+                        # We must pause as qb could still be accessing the file...
+                        qb_client.torrents_pause(  # type: ignore[reportCallIssue]
                             torrent_hashes=torrent_hash,
                         )
+                        sleep(1)  # Wait for the torrent to pause.
+                        try:
+                            t_absolute_path.unlink(missing_ok=True)
+                        except PermissionError:
+                            print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+                            should_resume = False
+                        else:
+                            print(f"{Fore.MAGENTA}Deleted '{t_absolute_path}'{Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.MAGENTA}Deleted '{t_absolute_path}'{Style.RESET_ALL}")
+                if os.name == "nt" and should_resume:
+                    qb_client.torrents_resume(  # type: ignore[reportCallIssue]
+                        torrent_hashes=torrent_hash,
+                    )
+        if priority_settings or delete_nodls:
             continue  # priority settings aren't compatible with any other cli args (yet)
         search_path , download_path = set_search_and_download_paths(
             torrent,
@@ -533,7 +533,7 @@ def matcher(
         torrent_file_sizes: set[int] = {file.size for file in torrent.files if file.size}
 
         files_in_directory: list[tuple[str, int]] = get_matching_files_in_dir_and_subdirs(search_path, torrent_file_sizes, use_hardlinks)
-        print(f"Found {len(files_in_directory)} matches in search path '{search_path}'")
+        #print(f"Found {len(files_in_directory)} matches in search path '{search_path}'")
         made_change: bool = match(torrent, files_in_directory, match_extension, download_path, use_hardlinks, is_dry_run, no_redownload)
 
         if input_download_path and input_download_path != torrent.save_path and not is_dry_run:
@@ -566,6 +566,7 @@ def main() -> None:
     parser.add_argument("-nodl", "-no_download", action="store_true", help="If file not found on disk, tell qBittorrent to set priority of that file to 0.")
     parser.add_argument("-p", "--priority", action="append", nargs=2, metavar=('PATTERN', 'PRIORITY'),
                         help="Set priority for files matching the pattern. Pattern is either an int (0-4) or the literal str 'DELETE'.")
+    parser.add_argument("-del", "--delete", action="store_true", help="Delete files that have the 'no download' priority.")
     #parser.add_argument("-f", "-find", action="store_true", help="Searches filenames to find matching torrents, when that file can't be found in another torrent.")
 
     args = parser.parse_args()
@@ -628,6 +629,10 @@ def main() -> None:
     if not args.input and not args.a and not priority_settings:
         parser.print_help()
         sys.exit("Nothing to do? (must pass `-all` OR an input torrent hash/file)")
+    delete_nodls = False
+    if args.delete:
+        delete_nodls = True
+        
 
     matcher(
         input_torrent_hashes=hashes,
@@ -640,6 +645,7 @@ def main() -> None:
         no_redownload=args.nodl,
         is_dry_run=args.dry,
         priority_settings=priority_settings,
+        delete_nodls=delete_nodls,
     )
 
 if __name__ == "__main__":
