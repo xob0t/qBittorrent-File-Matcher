@@ -1,4 +1,6 @@
-# qBittorrent File Matcher
+# Use https://github.com/xob0t/qbt-file-matcher
+
+## qBittorrent File Matcher
 
 This script helps match torrents in qBittorrent with their corresponding files on the disk, streamlining file organization and preventing duplication.
 
